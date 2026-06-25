@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+/*
+ * Drillin corporate skin.
+ * The palette is sincere LinkedIn-blue enterprise. It is played straight on
+ * purpose: the chrome must never look like it is in on the joke.
+ */
+@theme {
+  --color-canvas: #f4f2ee; /* LinkedIn warm gray page background */
+  --color-surface: #ffffff;
+  --color-surface-sunken: #f8fafd;
+  --color-border: #e0dfdc;
+  --color-border-strong: #c7c5c1;
+
+  --color-ink: #000000e6; /* primary text */
+  --color-ink-muted: #00000099; /* secondary text */
+  --color-ink-faint: #00000066; /* tertiary / metadata */
+
+  --color-brand: #0a66c2; /* the blue */
+  --color-brand-hover: #004182;
+  --color-brand-tint: #e8f0fe;
+
+  --color-peer: #0a66c2; /* peer-endorsed tag */
+  --color-peer-tint: #e8f0fe;
+  --color-self: #b45309; /* self-endorsed tag (amber, obvious cope) */
+  --color-self-tint: #fef3e7;
+
+  --color-positive: #057642;
+  --color-caution: #915907;
+  --color-critical: #b11c1c;
+
+  --font-sans: "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif;
+
+  --radius-card: 0.625rem;
+}
+
+html,
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
