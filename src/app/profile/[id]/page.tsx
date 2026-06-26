@@ -6,6 +6,8 @@ import { ProfileCard } from "@/components/ProfileCard";
 import { LedgerPanel } from "@/components/ui/LedgerPanel";
 import { EndorsementBanner } from "@/components/EndorsementBanner";
 
+export const dynamic = "force-dynamic";
+
 export default async function ProfilePage({
   params,
 }: {

@@ -39,3 +39,27 @@ Supabase env is present.
   (the identity firewall — endorser identity never leaves the database)
 
 The Supabase data layer drops in behind the async interface in `src/lib/data`.
+
+## Deploy (Vercel)
+
+Link the repo in the Vercel dashboard (New Project → import `tfpickard/drillin`).
+Framework preset auto-detects Next.js; no build config needed.
+
+**Environment variables** (Project → Settings → Environment Variables):
+
+| Key | Value |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://<project>.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_…` |
+| `DRILLIN_USE_SEED_DATA` | `0` for live data, `1` to demo with fixtures |
+
+The secret key is **not** needed at runtime — only `scripts/seed.ts` uses it,
+which you run locally. Don't add it to Vercel.
+
+**Supabase auth redirect URLs** (Supabase → Authentication → URL Configuration):
+add your Vercel domain as the Site URL and to Redirect URLs, e.g.
+`https://drillin.vercel.app/**`, so email confirmation / sign-in redirects
+resolve. For local dev, `http://localhost:3000/**` is already implied.
+
+Data pages are `force-dynamic`, so they render per-request against Supabase
+rather than being cached at build time.

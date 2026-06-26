@@ -1,6 +1,8 @@
 import { getDeck, getFacets } from "@/lib/data";
 import { DeckScreen } from "@/components/deck/DeckScreen";
 
+export const dynamic = "force-dynamic";
+
 export default async function SourcePage() {
   const [profiles, facets] = await Promise.all([getDeck(), getFacets()]);
 

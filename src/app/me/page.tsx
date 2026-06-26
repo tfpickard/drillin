@@ -1,11 +1,30 @@
-import { getViewer } from "@/lib/data";
+import { redirect } from "next/navigation";
+import { getProfile, getViewer, isSeedMode } from "@/lib/data";
+import { getServerSupabase } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/Card";
 import { ProfileCard } from "@/components/ProfileCard";
 import { LedgerPanel } from "@/components/ui/LedgerPanel";
 import { EndorsementBanner } from "@/components/EndorsementBanner";
+import type { Profile } from "@/lib/types";
+
+export const dynamic = "force-dynamic";
 
 export default async function MyProfilePage() {
-  const me = await getViewer();
+  let me: Profile | null;
+
+  if (isSeedMode()) {
+    me = await getViewer();
+  } else {
+    const supabase = await getServerSupabase();
+    const {
+      data: { user },
+    } = (await supabase!.auth.getUser()) ?? { data: { user: null } };
+    if (!user) redirect("/login");
+    me = await getProfile(user.id);
+    if (!me) redirect("/onboarding");
+  }
+
+  if (!me) redirect("/login");
 
   return (
     <div className="flex flex-col gap-3">

@@ -13,10 +13,11 @@ import { getServerSupabase } from "@/lib/supabase/server";
  * ledger come exclusively from the SECURITY DEFINER RPCs, so endorser identity
  * never reaches this process.
  *
- * Until M1 auth lands, reads run as the anon role: there is no logged-in
- * viewer, so the mutual-connection leak is 0 and pending tags stay hidden.
- * Both light up once a real session exists.
+ * The viewer is the authenticated user (or null when browsing signed-out): the
+ * mutual-connection leak and pending-tag preview key off it.
  */
+
+type Supabase = NonNullable<Awaited<ReturnType<typeof getServerSupabase>>>;
 
 const PROFILE_SELECT =
   "id,display_name,campus,location,seniority,headline,availability,intent,intent_line,avatar_hue,companies(name),roles(name)";
@@ -36,16 +37,26 @@ interface ProfileRow {
   roles: { name: string } | null;
 }
 
-async function client() {
+async function getClient(): Promise<Supabase> {
   const supabase = await getServerSupabase();
   if (!supabase) throw new Error("Supabase env missing in live mode");
   return supabase;
 }
 
-async function assemble(row: ProfileRow): Promise<Profile> {
-  const supabase = await client();
+async function currentUserId(supabase: Supabase): Promise<string | null> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user?.id ?? null;
+}
+
+async function assemble(
+  supabase: Supabase,
+  row: ProfileRow,
+  viewerId: string | null,
+): Promise<Profile> {
   const [tagsRes, ledgerRes] = await Promise.all([
-    supabase.rpc("get_profile_tags", { p_subject: row.id, p_viewer: null }),
+    supabase.rpc("get_profile_tags", { p_subject: row.id, p_viewer: viewerId }),
     supabase.rpc("get_integrity_ledger", { p_subject: row.id }),
   ]);
 
@@ -68,12 +79,7 @@ async function assemble(row: ProfileRow): Promise<Profile> {
   );
 
   const l = ledgerRes.data?.[0] as
-    | {
-        hidden_30d: number;
-        declined_30d: number;
-        self_ratio: number;
-        peer_retention: number;
-      }
+    | { hidden_30d: number; declined_30d: number; self_ratio: number; peer_retention: number }
     | undefined;
 
   const selfRatio = Number(l?.self_ratio ?? 0);
@@ -100,20 +106,25 @@ async function assemble(row: ProfileRow): Promise<Profile> {
     avatarHue: row.avatar_hue,
     tags,
     ledger,
-    degree: null, // computed from the match graph once a viewer session exists
+    degree: null, // computed from the match graph once degree lookup lands
   };
 }
 
 export async function getDeckLive(filters: DeckFilters = {}): Promise<Profile[]> {
-  const supabase = await client();
-  const { data, error } = await supabase
+  const supabase = await getClient();
+  const viewerId = await currentUserId(supabase);
+
+  let query = supabase
     .from("profiles")
     .select(PROFILE_SELECT)
     .eq("consents_to_listing", true);
+  if (viewerId) query = query.neq("id", viewerId); // don't source yourself
+
+  const { data, error } = await query;
   if (error) throw error;
 
   const rows = (data ?? []) as unknown as ProfileRow[];
-  const profiles = await Promise.all(rows.map(assemble));
+  const profiles = await Promise.all(rows.map((r) => assemble(supabase, r, viewerId)));
   return profiles.filter((p) => {
     if (filters.company && p.company !== filters.company) return false;
     if (filters.role && p.role !== filters.role) return false;
@@ -124,7 +135,8 @@ export async function getDeckLive(filters: DeckFilters = {}): Promise<Profile[]>
 }
 
 export async function getProfileLive(id: string): Promise<Profile | null> {
-  const supabase = await client();
+  const supabase = await getClient();
+  const viewerId = await currentUserId(supabase);
   const { data, error } = await supabase
     .from("profiles")
     .select(PROFILE_SELECT)
@@ -132,7 +144,14 @@ export async function getProfileLive(id: string): Promise<Profile | null> {
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  return assemble(data as unknown as ProfileRow);
+  return assemble(supabase, data as unknown as ProfileRow, viewerId);
+}
+
+export async function getViewerLive(): Promise<Profile | null> {
+  const supabase = await getClient();
+  const viewerId = await currentUserId(supabase);
+  if (!viewerId) return null;
+  return getProfileLive(viewerId);
 }
 
 export async function getFacetsLive() {
