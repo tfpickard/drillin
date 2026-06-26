@@ -5,12 +5,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { DeckFilters, Profile } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
+import { swipeProfile } from "@/app/actions/swipe";
 import { FilterBar } from "./FilterBar";
 import { SwipeCard } from "./SwipeCard";
 import { MatchScreen } from "./MatchScreen";
 
 // Seed profiles who have already swiped right on you, so the double opt-in
-// match screen is demoable from a cold deck.
+// match screen is demoable from a cold (seed) deck.
 const MUTUAL_INTEREST = new Set(["p_marcus", "p_tobias"]);
 
 interface Facets {
@@ -19,17 +20,24 @@ interface Facets {
   campus: string[];
 }
 
+interface Match {
+  profile: Profile;
+  matchId: string | null;
+}
+
 export function DeckScreen({
   profiles,
   facets,
+  live = false,
 }: {
   profiles: Profile[];
   facets: Facets;
+  live?: boolean;
 }) {
   const router = useRouter();
   const [filters, setFilters] = useState<DeckFilters>({});
   const [index, setIndex] = useState(0);
-  const [matched, setMatched] = useState<Profile | null>(null);
+  const [matched, setMatched] = useState<Match | null>(null);
 
   const deck = useMemo(() => applyFilters(profiles, filters), [profiles, filters]);
 
@@ -44,11 +52,14 @@ export function DeckScreen({
   const top = deck[index];
   const next = deck[index + 1];
 
-  function decide(profile: Profile, direction: "right" | "left") {
-    if (direction === "right" && MUTUAL_INTEREST.has(profile.id)) {
-      setMatched(profile);
-    }
+  async function decide(profile: Profile, direction: "right" | "left") {
     setIndex((i) => i + 1);
+    if (live) {
+      const res = await swipeProfile(profile.id, direction);
+      if ("matchId" in res && res.matchId) setMatched({ profile, matchId: res.matchId });
+    } else if (direction === "right" && MUTUAL_INTEREST.has(profile.id)) {
+      setMatched({ profile, matchId: null });
+    }
   }
 
   return (
@@ -71,8 +82,14 @@ export function DeckScreen({
             />
             {matched && (
               <MatchScreen
-                them={matched}
-                onMessage={() => router.push(`/profile/${matched.id}`)}
+                them={matched.profile}
+                onMessage={() =>
+                  router.push(
+                    matched.matchId
+                      ? `/chat/${matched.matchId}`
+                      : `/profile/${matched.profile.id}`,
+                  )
+                }
                 onDismiss={() => setMatched(null)}
               />
             )}

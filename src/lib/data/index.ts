@@ -1,4 +1,10 @@
-import type { DeckFilters, MyEndorsement, Profile } from "@/lib/types";
+import type {
+  ChatThread,
+  DeckFilters,
+  MatchSummary,
+  MyEndorsement,
+  Profile,
+} from "@/lib/types";
 import { SEED_PROFILES, SEED_VIEWER, findSeedProfile } from "./seed-profiles";
 import {
   getDeckLive,
@@ -6,6 +12,8 @@ import {
   getFacetsLive,
   getViewerLive,
   getMyEndorsementsLive,
+  getMatchesLive,
+  getConversationLive,
 } from "./supabase";
 
 export { searchCanon, CANON_TAGS } from "./canon";
@@ -60,6 +68,18 @@ export async function getViewer(): Promise<Profile | null> {
 export async function getMyEndorsements(): Promise<MyEndorsement[]> {
   if (!USE_SEED) return getMyEndorsementsLive();
   return [];
+}
+
+/** The signed-in user's matches (connections). Live mode only. */
+export async function getMatches(): Promise<MatchSummary[]> {
+  if (!USE_SEED) return getMatchesLive();
+  return [];
+}
+
+/** One conversation thread by match id. Live mode only. */
+export async function getConversation(matchId: string): Promise<ChatThread | null> {
+  if (!USE_SEED) return getConversationLive(matchId);
+  return null;
 }
 
 /** Distinct filter facet values present in the deck, for the sourcing bar. */

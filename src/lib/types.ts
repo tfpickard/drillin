@@ -105,6 +105,31 @@ export interface Profile {
   degree: ConnectionDegree;
 }
 
+/** A match in the connections list. */
+export interface MatchSummary {
+  matchId: string;
+  conversationId: string | null;
+  otherId: string;
+  otherName: string;
+  otherHue: number;
+}
+
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  body: string;
+  createdAt: string;
+}
+
+/** Everything the chat page needs for one conversation. */
+export interface ChatThread {
+  conversationId: string;
+  meId: string;
+  otherName: string;
+  otherHue: number;
+  messages: ChatMessage[];
+}
+
 export interface DeckFilters {
   company?: string;
   role?: string;

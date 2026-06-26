@@ -26,6 +26,9 @@ export async function SiteHeader() {
           </Link>
           {signedIn ? (
             <>
+              <Link href="/matches" className="hover:text-brand">
+                Connections
+              </Link>
               <Link href="/me" className="hover:text-brand">
                 My Profile
               </Link>

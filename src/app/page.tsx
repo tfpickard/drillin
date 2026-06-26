@@ -1,4 +1,4 @@
-import { getDeck, getFacets } from "@/lib/data";
+import { getDeck, getFacets, isSeedMode } from "@/lib/data";
 import { DeckScreen } from "@/components/deck/DeckScreen";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ export default async function SourcePage() {
           {profiles.length} profiles match your reach. Swipe to express interest.
         </p>
       </div>
-      <DeckScreen profiles={profiles} facets={facets} />
+      <DeckScreen profiles={profiles} facets={facets} live={!isSeedMode()} />
     </div>
   );
 }

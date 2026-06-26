@@ -1,6 +1,8 @@
 import type {
+  ChatThread,
   DeckFilters,
   IntegrityLedger,
+  MatchSummary,
   MyEndorsement,
   Profile,
   ProfileTag,
@@ -176,6 +178,85 @@ export async function getMyEndorsementsLive(): Promise<MyEndorsement[]> {
       status: r.status,
     }),
   );
+}
+
+export async function getMatchesLive(): Promise<MatchSummary[]> {
+  const supabase = await getClient();
+  const me = await currentUserId(supabase);
+  if (!me) return [];
+
+  const { data: ms } = await supabase
+    .from("matches")
+    .select("id,user_a,user_b,created_at")
+    .or(`user_a.eq.${me},user_b.eq.${me}`)
+    .order("created_at", { ascending: false });
+  const matches = ms ?? [];
+  if (matches.length === 0) return [];
+
+  const otherIds = matches.map((m) => (m.user_a === me ? m.user_b : m.user_a));
+  const [{ data: profs }, { data: convs }] = await Promise.all([
+    supabase.from("profiles").select("id,display_name,avatar_hue").in("id", otherIds),
+    supabase.from("conversations").select("id,match_id").in("match_id", matches.map((m) => m.id)),
+  ]);
+
+  const profById = new Map((profs ?? []).map((p) => [p.id, p]));
+  const convByMatch = new Map((convs ?? []).map((c) => [c.match_id, c.id]));
+
+  return matches.map((m) => {
+    const otherId = m.user_a === me ? m.user_b : m.user_a;
+    const p = profById.get(otherId);
+    return {
+      matchId: m.id,
+      conversationId: convByMatch.get(m.id) ?? null,
+      otherId,
+      otherName: p?.display_name ?? "A connection",
+      otherHue: p?.avatar_hue ?? 210,
+    };
+  });
+}
+
+export async function getConversationLive(matchId: string): Promise<ChatThread | null> {
+  const supabase = await getClient();
+  const me = await currentUserId(supabase);
+  if (!me) return null;
+
+  // RLS limits this to matches you're in.
+  const { data: match } = await supabase
+    .from("matches")
+    .select("id,user_a,user_b")
+    .eq("id", matchId)
+    .maybeSingle();
+  if (!match) return null;
+
+  const { data: conv } = await supabase
+    .from("conversations")
+    .select("id")
+    .eq("match_id", matchId)
+    .maybeSingle();
+  if (!conv) return null;
+
+  const otherId = match.user_a === me ? match.user_b : match.user_a;
+  const [{ data: other }, { data: msgs }] = await Promise.all([
+    supabase.from("profiles").select("display_name,avatar_hue").eq("id", otherId).maybeSingle(),
+    supabase
+      .from("messages")
+      .select("id,sender_id,body,created_at")
+      .eq("conversation_id", conv.id)
+      .order("created_at", { ascending: true }),
+  ]);
+
+  return {
+    conversationId: conv.id,
+    meId: me,
+    otherName: other?.display_name ?? "A connection",
+    otherHue: other?.avatar_hue ?? 210,
+    messages: (msgs ?? []).map((m) => ({
+      id: m.id,
+      senderId: m.sender_id,
+      body: m.body,
+      createdAt: m.created_at,
+    })),
+  };
 }
 
 export async function getFacetsLive() {
