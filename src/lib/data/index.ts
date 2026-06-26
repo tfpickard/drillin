@@ -1,6 +1,6 @@
 import type { DeckFilters, Profile } from "@/lib/types";
 import { SEED_PROFILES, SEED_VIEWER, findSeedProfile } from "./seed-profiles";
-import { getDeckLive, getProfileLive, getFacetsLive } from "./supabase";
+import { getDeckLive, getProfileLive, getFacetsLive, getViewerLive } from "./supabase";
 
 export { searchCanon, CANON_TAGS } from "./canon";
 export { SEED_VIEWER } from "./seed-profiles";
@@ -15,6 +15,10 @@ export { SEED_VIEWER } from "./seed-profiles";
 const USE_SEED =
   process.env.DRILLIN_USE_SEED_DATA === "1" ||
   !process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+export function isSeedMode(): boolean {
+  return USE_SEED;
+}
 
 export async function getDeck(filters: DeckFilters = {}): Promise<Profile[]> {
   if (!USE_SEED) return getDeckLive(filters);
@@ -36,8 +40,13 @@ export async function getProfile(id: string): Promise<Profile | null> {
   return findSeedProfile(id) ?? null;
 }
 
-export async function getViewer(): Promise<Profile> {
-  // No auth yet (M1): the viewer is a blank placeholder in both modes.
+/**
+ * The signed-in user's own profile. Seed mode returns the blank placeholder;
+ * live mode returns the authenticated profile, or null if signed out / not yet
+ * onboarded (the caller redirects).
+ */
+export async function getViewer(): Promise<Profile | null> {
+  if (!USE_SEED) return getViewerLive();
   return SEED_VIEWER;
 }
 
