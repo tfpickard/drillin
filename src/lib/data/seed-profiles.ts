@@ -1,21 +1,11 @@
-import type {
-  IntegrityLedger,
-  LedgerSeverity,
-  Profile,
-  ProfileTag,
-} from "@/lib/types";
+import type { IntegrityLedger, Profile, ProfileTag } from "@/lib/types";
+import { severityFromRatio } from "@/lib/ledger";
 
 /**
  * Cold-start seed (spec §"Cold start"). The set must demonstrate the full
  * comedic range — pure restraint sitting next to all-the-way-off-the-leash —
  * because the contrast is the engine. Every card is played 100% straight.
  */
-
-function severity(ratio: number): LedgerSeverity {
-  if (ratio >= 0.66) return "high";
-  if (ratio >= 0.34) return "elevated";
-  return "nominal";
-}
 
 function ledger(
   tags: ProfileTag[],
@@ -29,7 +19,7 @@ function ledger(
     hidden30d: opts.hidden30d ?? 0,
     declined30d: opts.declined30d ?? 0,
     selfRatio: ratio,
-    selfRatioSeverity: severity(ratio),
+    selfRatioSeverity: severityFromRatio(ratio),
     peerRetention: opts.peerRetention ?? 1,
   };
 }
