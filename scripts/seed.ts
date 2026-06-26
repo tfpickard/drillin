@@ -6,7 +6,7 @@
  *   npm run db:seed
  *
  * Expects NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY in .env.local.
- * Intended for a fresh project; re-running may error on already-created users.
+ * Idempotent: re-running reuses existing users and replaces seeded endorsements.
  */
 import { readFileSync } from "node:fs";
 import { createAdminClient } from "../src/lib/supabase/admin";
@@ -114,21 +114,35 @@ const SPECS: Spec[] = [
 const BOT_COUNT = 12;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
-async function createUser(email: string, name: string): Promise<string> {
+function hash(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return h;
+}
+
+/** Create the auth user, or return the existing one's id (idempotent). */
+async function ensureUser(email: string, name: string): Promise<string> {
   const { data, error } = await db.auth.admin.createUser({
     email,
     password: `Seed!${Math.abs(hash(email))}aA`,
     email_confirm: true,
     user_metadata: { seed: true, name },
   });
-  if (error || !data.user) throw new Error(`createUser ${email}: ${error?.message}`);
-  return data.user.id;
+  if (!error && data.user) return data.user.id;
+  if (error && /already.*registered/i.test(error.message)) {
+    return findUserIdByEmail(email);
+  }
+  throw new Error(`ensureUser ${email}: ${error?.message}`);
 }
 
-function hash(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return h;
+async function findUserIdByEmail(email: string): Promise<string> {
+  for (let page = 1; ; page++) {
+    const { data, error } = await db.auth.admin.listUsers({ page, perPage: 1000 });
+    if (error) throw error;
+    const found = data.users.find((u) => u.email === email);
+    if (found) return found.id;
+    if (data.users.length < 1000) throw new Error(`user vanished: ${email}`);
+  }
 }
 
 async function upsertNamed(table: "companies" | "roles", names: string[]) {
@@ -141,7 +155,6 @@ async function upsertNamed(table: "companies" | "roles", names: string[]) {
 
 async function canonIdMap() {
   const labels = CANON_TAGS.map((t) => ({ label: t.label, category: t.category }));
-  // chunked upsert to stay under payload limits
   for (let i = 0; i < labels.length; i += 200) {
     const { error } = await db
       .from("canon_tags")
@@ -150,96 +163,6 @@ async function canonIdMap() {
   }
   const { data } = await db.from("canon_tags").select("id,label");
   return new Map((data ?? []).map((r) => [r.label, r.id]));
-}
-
-// ── main ─────────────────────────────────────────────────────────────────────
-async function main() {
-  console.log("Seeding canon tags…");
-  const canon = await canonIdMap();
-  console.log(`  ${canon.size} canon tags`);
-
-  const companyMap = await upsertNamed("companies", SPECS.map((s) => s.company));
-  const roleMap = await upsertNamed("roles", SPECS.map((s) => s.role));
-
-  console.log(`Creating ${BOT_COUNT} endorser bots…`);
-  const bots: string[] = [];
-  for (let i = 0; i < BOT_COUNT; i++) {
-    bots.push(await createUser(`seed.bot${i}@drillin.app`, `Endorser ${i}`));
-  }
-
-  console.log(`Creating ${SPECS.length} showcase profiles…`);
-  const idBySlug = new Map<string, string>();
-  for (const s of SPECS) {
-    const id = await createUser(`seed.${s.slug}@drillin.app`, s.name);
-    idBySlug.set(s.slug, id);
-    const { error } = await db.from("profiles").upsert({
-      id,
-      display_name: s.name,
-      role_id: roleMap.get(s.role),
-      company_id: companyMap.get(s.company),
-      campus: s.campus,
-      location: s.location,
-      seniority: s.seniority,
-      headline: s.headline,
-      availability: s.availability,
-      intent: s.intent,
-      intent_line: s.intentLine,
-      avatar_hue: s.hue,
-      is_age_verified: true,
-      consents_to_listing: true,
-    });
-    if (error) throw error;
-  }
-
-  console.log("Inserting endorsements…");
-  const rows: Record<string, unknown>[] = [];
-  const events: Record<string, unknown>[] = [];
-
-  for (const s of SPECS) {
-    const subjectId = idBySlug.get(s.slug)!;
-
-    for (const [label, count] of s.peer) {
-      for (let i = 0; i < count; i++) {
-        rows.push(endorsement(subjectId, bots[i % BOT_COUNT]!, label, "peer", "active", canon));
-      }
-    }
-    for (const [label, count] of s.hiddenPeer ?? []) {
-      for (let i = 0; i < count; i++) {
-        rows.push(endorsement(subjectId, bots[i % BOT_COUNT]!, label, "peer", "hidden", canon));
-      }
-    }
-    for (const label of s.self) {
-      rows.push(endorsement(subjectId, subjectId, label, "self", "active", canon));
-    }
-    for (let i = 0; i < (s.events?.hidden ?? 0); i++) {
-      events.push({ subject_id: subjectId, type: "hidden" });
-    }
-    for (let i = 0; i < (s.events?.declined ?? 0); i++) {
-      events.push({ subject_id: subjectId, type: "declined" });
-    }
-  }
-
-  for (let i = 0; i < rows.length; i += 500) {
-    const { error } = await db.from("endorsements").insert(rows.slice(i, i + 500));
-    if (error) throw error;
-  }
-  if (events.length) {
-    const { error } = await db.from("integrity_events").insert(events);
-    if (error) throw error;
-  }
-
-  // A connection so the graph is non-empty (mutual leak lights up under auth).
-  const a = idBySlug.get("priya")!;
-  const b = idBySlug.get("marcus")!;
-  const [ua, ub] = a < b ? [a, b] : [b, a];
-  const { data: match } = await db
-    .from("matches")
-    .insert({ user_a: ua, user_b: ub })
-    .select("id")
-    .single();
-  if (match) await db.from("conversations").insert({ match_id: match.id });
-
-  console.log(`Done. ${rows.length} endorsements, ${events.length} integrity events.`);
 }
 
 function endorsement(
@@ -261,6 +184,107 @@ function endorsement(
     status,
     category: categoryOf.get(label) ?? "corporate",
   };
+}
+
+// ── main ─────────────────────────────────────────────────────────────────────
+async function main() {
+  console.log("Seeding canon tags…");
+  const canon = await canonIdMap();
+  console.log(`  ${canon.size} canon tags`);
+
+  const companyMap = await upsertNamed("companies", SPECS.map((s) => s.company));
+  const roleMap = await upsertNamed("roles", SPECS.map((s) => s.role));
+
+  console.log(`Ensuring ${BOT_COUNT} endorser bots…`);
+  const bots: string[] = [];
+  for (let i = 0; i < BOT_COUNT; i++) {
+    bots.push(await ensureUser(`seed.bot${i}@drillin.app`, `Endorser ${i}`));
+  }
+  // Bots need profile rows too — endorser_id FKs to profiles. Kept off the deck.
+  const { error: botErr } = await db.from("profiles").upsert(
+    bots.map((id, i) => ({
+      id,
+      display_name: `Endorser ${i}`,
+      consents_to_listing: false,
+    })),
+  );
+  if (botErr) throw botErr;
+
+  console.log(`Ensuring ${SPECS.length} showcase profiles…`);
+  const idBySlug = new Map<string, string>();
+  for (const s of SPECS) {
+    const id = await ensureUser(`seed.${s.slug}@drillin.app`, s.name);
+    idBySlug.set(s.slug, id);
+    const { error } = await db.from("profiles").upsert({
+      id,
+      display_name: s.name,
+      role_id: roleMap.get(s.role),
+      company_id: companyMap.get(s.company),
+      campus: s.campus,
+      location: s.location,
+      seniority: s.seniority,
+      headline: s.headline,
+      availability: s.availability,
+      intent: s.intent,
+      intent_line: s.intentLine,
+      avatar_hue: s.hue,
+      is_age_verified: true,
+      consents_to_listing: true,
+    });
+    if (error) throw error;
+  }
+
+  const subjectIds = [...idBySlug.values()];
+
+  // Idempotency: clear any prior seeded endorsements/events for these subjects.
+  await db.from("integrity_events").delete().in("subject_id", subjectIds);
+  await db.from("endorsements").delete().in("subject_id", subjectIds);
+
+  console.log("Inserting endorsements…");
+  const rows: Record<string, unknown>[] = [];
+  const events: Record<string, unknown>[] = [];
+
+  for (const s of SPECS) {
+    const subjectId = idBySlug.get(s.slug)!;
+    for (const [label, count] of s.peer) {
+      for (let i = 0; i < count; i++) {
+        rows.push(endorsement(subjectId, bots[i % BOT_COUNT]!, label, "peer", "active", canon));
+      }
+    }
+    for (const [label, count] of s.hiddenPeer ?? []) {
+      for (let i = 0; i < count; i++) {
+        rows.push(endorsement(subjectId, bots[i % BOT_COUNT]!, label, "peer", "hidden", canon));
+      }
+    }
+    for (const label of s.self) {
+      rows.push(endorsement(subjectId, subjectId, label, "self", "active", canon));
+    }
+    for (let i = 0; i < (s.events?.hidden ?? 0); i++) events.push({ subject_id: subjectId, type: "hidden" });
+    for (let i = 0; i < (s.events?.declined ?? 0); i++) events.push({ subject_id: subjectId, type: "declined" });
+  }
+
+  for (let i = 0; i < rows.length; i += 500) {
+    const { error } = await db.from("endorsements").insert(rows.slice(i, i + 500));
+    if (error) throw error;
+  }
+  if (events.length) {
+    const { error } = await db.from("integrity_events").insert(events);
+    if (error) throw error;
+  }
+
+  // A connection so the graph is non-empty (mutual leak lights up under auth).
+  const a = idBySlug.get("priya")!;
+  const b = idBySlug.get("marcus")!;
+  const [ua, ub] = a < b ? [a, b] : [b, a];
+  await db.from("matches").delete().eq("user_a", ua).eq("user_b", ub);
+  const { data: match } = await db
+    .from("matches")
+    .insert({ user_a: ua, user_b: ub })
+    .select("id")
+    .single();
+  if (match) await db.from("conversations").insert({ match_id: match.id });
+
+  console.log(`Done. ${rows.length} endorsements, ${events.length} integrity events.`);
 }
 
 main().then(
