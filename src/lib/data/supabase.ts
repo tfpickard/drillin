@@ -1,6 +1,7 @@
 import type {
   DeckFilters,
   IntegrityLedger,
+  MyEndorsement,
   Profile,
   ProfileTag,
 } from "@/lib/types";
@@ -152,6 +153,29 @@ export async function getViewerLive(): Promise<Profile | null> {
   const viewerId = await currentUserId(supabase);
   if (!viewerId) return null;
   return getProfileLive(viewerId);
+}
+
+export async function getMyEndorsementsLive(): Promise<MyEndorsement[]> {
+  const supabase = await getClient();
+  const { data, error } = await supabase.rpc("get_my_endorsements");
+  if (error) throw error;
+  return (data ?? []).map(
+    (r: {
+      id: string;
+      label: string;
+      tier: MyEndorsement["tier"];
+      kind: MyEndorsement["kind"];
+      category: MyEndorsement["category"];
+      status: MyEndorsement["status"];
+    }) => ({
+      id: r.id,
+      label: r.label,
+      tier: r.tier,
+      kind: r.kind,
+      category: r.category,
+      status: r.status,
+    }),
+  );
 }
 
 export async function getFacetsLive() {

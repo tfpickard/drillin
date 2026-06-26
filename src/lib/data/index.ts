@@ -1,6 +1,12 @@
-import type { DeckFilters, Profile } from "@/lib/types";
+import type { DeckFilters, MyEndorsement, Profile } from "@/lib/types";
 import { SEED_PROFILES, SEED_VIEWER, findSeedProfile } from "./seed-profiles";
-import { getDeckLive, getProfileLive, getFacetsLive, getViewerLive } from "./supabase";
+import {
+  getDeckLive,
+  getProfileLive,
+  getFacetsLive,
+  getViewerLive,
+  getMyEndorsementsLive,
+} from "./supabase";
 
 export { searchCanon, CANON_TAGS } from "./canon";
 export { SEED_VIEWER } from "./seed-profiles";
@@ -48,6 +54,12 @@ export async function getProfile(id: string): Promise<Profile | null> {
 export async function getViewer(): Promise<Profile | null> {
   if (!USE_SEED) return getViewerLive();
   return SEED_VIEWER;
+}
+
+/** The signed-in user's own endorsement rows (with ids) for management. */
+export async function getMyEndorsements(): Promise<MyEndorsement[]> {
+  if (!USE_SEED) return getMyEndorsementsLive();
+  return [];
 }
 
 /** Distinct filter facet values present in the deck, for the sourcing bar. */

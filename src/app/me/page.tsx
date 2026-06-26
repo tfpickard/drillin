@@ -1,18 +1,22 @@
 import { redirect } from "next/navigation";
-import { getProfile, getViewer, isSeedMode } from "@/lib/data";
+import { getMyEndorsements, getProfile, getViewer, isSeedMode } from "@/lib/data";
 import { getServerSupabase } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/Card";
 import { ProfileCard } from "@/components/ProfileCard";
 import { LedgerPanel } from "@/components/ui/LedgerPanel";
 import { EndorsementBanner } from "@/components/EndorsementBanner";
-import type { Profile } from "@/lib/types";
+import { EndorsePanel } from "@/components/endorse/EndorsePanel";
+import { ManageTags } from "@/components/endorse/ManageTags";
+import type { MyEndorsement, Profile } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 export default async function MyProfilePage() {
   let me: Profile | null;
+  let mine: MyEndorsement[] = [];
+  const seed = isSeedMode();
 
-  if (isSeedMode()) {
+  if (seed) {
     me = await getViewer();
   } else {
     const supabase = await getServerSupabase();
@@ -22,6 +26,7 @@ export default async function MyProfilePage() {
     if (!user) redirect("/login");
     me = await getProfile(user.id);
     if (!me) redirect("/onboarding");
+    mine = await getMyEndorsements();
   }
 
   if (!me) redirect("/login");
@@ -38,6 +43,13 @@ export default async function MyProfilePage() {
       <EndorsementBanner profile={me} />
 
       <LedgerPanel ledger={me.ledger} />
+
+      {!seed && (
+        <>
+          <EndorsePanel subjectId={me.id} mode="self" />
+          <ManageTags items={mine} />
+        </>
+      )}
 
       <p className="px-1 text-xs text-ink-faint">
         Endorsements are added by your connections. The only way to get written

@@ -67,6 +67,21 @@ export interface IntegrityLedger {
   peerRetention: number;
 }
 
+export type EndorsementStatus = "pending" | "active" | "hidden" | "declined";
+
+/**
+ * The owner's own endorsement row, with id, for management (hide/approve/
+ * decline/delete). Only ever returned for your own profile.
+ */
+export interface MyEndorsement {
+  id: string;
+  label: string;
+  tier: TagTier;
+  kind: "canon" | "freeform";
+  category: TagCategory | "freeform";
+  status: EndorsementStatus;
+}
+
 export type ConnectionDegree = 1 | 2 | 3 | null;
 
 /** A card in the deck / a full profile. */
